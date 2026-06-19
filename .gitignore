@@ -20,3 +20,21 @@ rad.json
 *.flf
 #Test results file
 __pycache__
+
+# checkpoints / outputs
+checkpoint-*/
+checkpoints/
+outputs/
+output/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+
+# cache / logs
+.cache/
+wandb/
+logs/
+__pycache__/
+*.pyc

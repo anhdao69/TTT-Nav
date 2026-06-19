@@ -1,13 +1,28 @@
 import re
 
 # Spatial-TTT-Data-97k: mini high-quality spatial dataset from Spatial-TTT, ~97k samples (download from THU-SI/Spatial-TTT-Data-97k on Hugging Face)
-SPATIAL_TTT_DATA_97K = {
-    "annotation_path": "PATH_TO_SPATIAL_TTT_97K_ANNOTATION",
-    "data_path": "PATH_TO_SPATIAL_TTT_97K_DATA",
+# SPATIAL_TTT_DATA_97K = {
+#     "annotation_path": "PATH_TO_SPATIAL_TTT_97K_ANNOTATION",
+#     "data_path": "PATH_TO_SPATIAL_TTT_97K_DATA",
+# }
+
+# data_dict = {
+#     "spatial_ttt_data_97k": SPATIAL_TTT_DATA_97K,
+# }
+
+TRAIN_R2R_RxR = {
+    "annotation_path": "/mnt/data/vmo-ai-task/anhdh35/JanusVLN/train_r2r_rxr.json",
+    "data_path": "/mnt/data/vmo-ai-task/anhdh35/JanusVLN",
+    "tag": "train_r2r_rxr"
 }
 
 data_dict = {
-    "spatial_ttt_data_97k": SPATIAL_TTT_DATA_97K,
+    # "cambrian_737k": CAMBRIAN_737K,
+    # "cambrian_737k_pack": CAMBRIAN_737K_PACK,
+    # "mp_doc": MP_DOC,
+    # "clevr_mc": CLEVR_MC,
+    # "videochatgpt": VIDEOCHATGPT,
+    "train_r2r_rxr": TRAIN_R2R_RxR,
 }
 
 

@@ -57,7 +57,55 @@ from models.causal_swa_lact import Qwen3VLLaCTSWIGLULayer
 from qwenvl.data.data_processor import make_supervised_data_module
 from qwenvl.train.argument import ModelArguments
 
+import time
+from tqdm.auto import tqdm
+
 TRAINING_ARGS_NAME = "training_args.bin"
+
+
+class TimeEstimateCallback(transformers.TrainerCallback):
+    def __init__(self):
+        self.pbar = None
+        self.start_time = None
+        self.last_step = 0
+
+    @staticmethod
+    def _fmt(seconds):
+        seconds = int(max(seconds, 0))
+        h, rem = divmod(seconds, 3600)
+        m, s = divmod(rem, 60)
+        return f"{h:02d}:{m:02d}:{s:02d}"
+
+    def _is_rank0(self, args):
+        return getattr(args, "local_rank", -1) in (-1, 0)
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        if not self._is_rank0(args):
+            return
+        self.start_time = time.time()
+        self.last_step = state.global_step
+        total = state.max_steps if state.max_steps and state.max_steps > 0 else None
+        self.pbar = tqdm(total=total, initial=state.global_step, desc="Training", dynamic_ncols=True)
+
+    def on_step_end(self, args, state, control, **kwargs):
+        if self.pbar is None:
+            return
+        step_delta = state.global_step - self.last_step
+        if step_delta > 0:
+            self.pbar.update(step_delta)
+            self.last_step = state.global_step
+
+        elapsed = time.time() - self.start_time
+        done_steps = max(state.global_step, 1)
+        avg = elapsed / done_steps
+        remain_steps = max((state.max_steps or 0) - state.global_step, 0)
+        eta = avg * remain_steps
+        self.pbar.set_postfix(elapsed=self._fmt(elapsed), avg=f"{avg:.1f}s/step", eta=self._fmt(eta))
+
+    def on_train_end(self, args, state, control, **kwargs):
+        if self.pbar is not None:
+            self.pbar.close()
+
 
 DEFAULT_LACT_CONFIG = {
     "num_lact_heads": 4,
@@ -1070,7 +1118,7 @@ def train(attn_implementation="flash_attention_2"):
 
     data_module = make_supervised_data_module(processor, data_args=data_args)
 
-    callbacks = []
+    callbacks = [TimeEstimateCallback()]
     if lact_args.window_decay:
         window_decay_callback = WindowDecayCallback(
             max_ws=5400, min_ws=lact_args.window_size, bias_step=50, base_step=3000

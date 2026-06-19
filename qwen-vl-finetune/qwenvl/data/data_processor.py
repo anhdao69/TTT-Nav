@@ -136,22 +136,156 @@ def update_processor_pixels(processor, data_args):
     return processor
 
 
+def _to_list(x):
+    if x is None:
+        return []
+    if isinstance(x, str):
+        return [x]
+    return list(x)
+
+# def _build_messages(item: Dict[str, Any], base_path: Path) -> List[Dict[str, Any]]:
+#     # Extract and normalize images and videos
+#     images = item.get("image") or []
+#     if isinstance(images, str):
+#         images = [images]
+
+#     videos = item.get("video") or []
+#     if isinstance(videos, str):
+#         videos = [videos]
+
+#     # Build media pools with absolute paths
+#     image_pool = [
+#         {"type": "image", "image": _make_abs_paths(base_path, img)} for img in images
+#     ]
+#     video_pool = [
+#         {"type": "video", "video": _make_abs_paths(base_path, vid)} for vid in videos
+#     ]
+
+#     messages = []
+#     for turn in item["conversations"]:
+#         role = "user" if turn["from"] == "human" else "assistant"
+#         text: str = turn["value"]
+
+#         if role == "user":
+#             content = []
+#             # Split text by <image> or <video> placeholders while keeping delimiters
+#             text_parts = re.split(r"(<image>|<video>)", text)
+
+#             for seg in text_parts:
+#                 if seg == "<image>":
+#                     if not image_pool:
+#                         raise ValueError(
+#                             "Number of <image> placeholders exceeds the number of provided images"
+#                         )
+#                     content.append(image_pool.pop(0))
+#                 elif seg == "<video>":
+#                     if not video_pool:
+#                         raise ValueError(
+#                             "Number of <video> placeholders exceeds the number of provided videos"
+#                         )
+#                     content.append(video_pool.pop(0))
+#                 elif seg.strip():
+#                     content.append({"type": "text", "text": seg.strip()})
+
+#             messages.append({"role": role, "content": content})
+#         else:
+#             # Assistant messages contain only text
+#             messages.append({"role": role, "content": [{"type": "text", "text": text}]})
+
+#     # Check for unused media files
+#     if image_pool:
+#         raise ValueError(
+#             f"{len(image_pool)} image(s) remain unused (not consumed by placeholders)"
+#         )
+#     if video_pool:
+#         raise ValueError(
+#             f"{len(video_pool)} video(s) remain unused (not consumed by placeholders)"
+#         )
+
+#     return messages
+
 def _build_messages(item: Dict[str, Any], base_path: Path) -> List[Dict[str, Any]]:
-    # Extract and normalize images and videos
-    images = item.get("image") or []
-    if isinstance(images, str):
-        images = [images]
+    """
+    Minimal Spatial-TTT fix.
 
-    videos = item.get("video") or []
-    if isinstance(videos, str):
-        videos = [videos]
+    Your VLN JSON uses:
+        "images": [frame0, frame1, frame2, ...]
 
-    # Build media pools with absolute paths
+    Spatial-TTT training should treat this as ONE video trajectory, not many images.
+    Therefore:
+        JSON "images" list -> one {"type": "video", "video": [frame paths]}
+        many <image> placeholders -> one video visual token
+    """
+
+    # ============================================================
+    # Case 1: your VLN dataset format: "images" = trajectory frames
+    # ============================================================
+    if "images" in item and item["images"] is not None:
+        frame_paths = [
+            _make_abs_paths(base_path, p)
+            for p in _to_list(item["images"])
+        ]
+
+        if len(frame_paths) == 0:
+            raise ValueError(f"Empty images list. sample_id={item.get('id')}")
+
+        video_item = {
+            "type": "video",
+            "video": frame_paths,
+        }
+
+        messages = []
+        video_inserted = False
+
+        for turn in item["conversations"]:
+            role = "user" if turn["from"] == "human" else "assistant"
+            text: str = turn["value"]
+
+            if role == "user":
+                content = []
+                parts = re.split(r"(<image>|<video>)", text)
+
+                for seg in parts:
+                    if seg in ("<image>", "<video>"):
+                        # Insert one video at the first visual placeholder only.
+                        if not video_inserted:
+                            content.append(video_item)
+                            video_inserted = True
+
+                        # Skip all remaining visual placeholders.
+                        continue
+
+                    if seg.strip():
+                        content.append({"type": "text", "text": seg.strip()})
+
+                # If a sample has no <image>/<video> placeholder, still add video.
+                if not video_inserted:
+                    content.insert(0, video_item)
+                    video_inserted = True
+
+                messages.append({"role": role, "content": content})
+
+            else:
+                messages.append(
+                    {"role": role, "content": [{"type": "text", "text": text}]}
+                )
+
+        return messages
+
+    # ============================================================
+    # Case 2: original Qwen/Spatial-TTT format
+    # ============================================================
+    images = _to_list(item.get("image", []))
+    videos = _to_list(item.get("video", []))
+
     image_pool = [
-        {"type": "image", "image": _make_abs_paths(base_path, img)} for img in images
+        {"type": "image", "image": _make_abs_paths(base_path, img)}
+        for img in images
     ]
+
     video_pool = [
-        {"type": "video", "video": _make_abs_paths(base_path, vid)} for vid in videos
+        {"type": "video", "video": _make_abs_paths(base_path, vid)}
+        for vid in videos
     ]
 
     messages = []
@@ -161,38 +295,43 @@ def _build_messages(item: Dict[str, Any], base_path: Path) -> List[Dict[str, Any
 
         if role == "user":
             content = []
-            # Split text by <image> or <video> placeholders while keeping delimiters
             text_parts = re.split(r"(<image>|<video>)", text)
 
             for seg in text_parts:
                 if seg == "<image>":
                     if not image_pool:
                         raise ValueError(
-                            "Number of <image> placeholders exceeds the number of provided images"
+                            f"Number of <image> placeholders exceeds provided images. "
+                            f"sample_id={item.get('id')}"
                         )
                     content.append(image_pool.pop(0))
+
                 elif seg == "<video>":
                     if not video_pool:
                         raise ValueError(
-                            "Number of <video> placeholders exceeds the number of provided videos"
+                            f"Number of <video> placeholders exceeds provided videos. "
+                            f"sample_id={item.get('id')}"
                         )
                     content.append(video_pool.pop(0))
+
                 elif seg.strip():
                     content.append({"type": "text", "text": seg.strip()})
 
             messages.append({"role": role, "content": content})
-        else:
-            # Assistant messages contain only text
-            messages.append({"role": role, "content": [{"type": "text", "text": text}]})
 
-    # Check for unused media files
+        else:
+            messages.append(
+                {"role": role, "content": [{"type": "text", "text": text}]}
+            )
+
     if image_pool:
         raise ValueError(
-            f"{len(image_pool)} image(s) remain unused (not consumed by placeholders)"
+            f"{len(image_pool)} image(s) remain unused. sample_id={item.get('id')}"
         )
+
     if video_pool:
         raise ValueError(
-            f"{len(video_pool)} video(s) remain unused (not consumed by placeholders)"
+            f"{len(video_pool)} video(s) remain unused. sample_id={item.get('id')}"
         )
 
     return messages
@@ -210,7 +349,7 @@ def preprocess_qwen_visual(
     messages = _build_messages(source, base_path)
 
     full_result = processor.apply_chat_template(
-        messages, tokenize=True, return_dict=True, return_tensors="pt"
+        messages, tokenize=True, return_dict=True, return_tensors="pt", do_sample_frames=False
     )
 
     input_ids = full_result["input_ids"]
@@ -319,7 +458,8 @@ class LazySupervisedDataset(Dataset):
     def lengths(self):
         length_list = []
         for sample in self.list_data_dict:
-            img_tokens = 128 if "image" in sample else 0
+            # img_tokens = 128 if "image" in sample else 0
+            img_tokens = 128 if ("image" in sample or "images" in sample or "video" in sample) else 0
             length_list.append(
                 sum(len(conv["value"].split()) for conv in sample["conversations"])
                 + img_tokens
@@ -334,7 +474,9 @@ class LazySupervisedDataset(Dataset):
                 len(conv["value"].split()) for conv in sample["conversations"]
             )
             cur_len = (
-                cur_len if ("image" in sample) or ("video" in sample) else -cur_len
+                cur_len
+                if ("image" in sample) or ("images" in sample) or ("video" in sample)
+                else -cur_len
             )
             length_list.append(cur_len)
         return length_list
@@ -439,7 +581,7 @@ class LazySupervisedDataset(Dataset):
             video_grid_thw = None
             second_per_grid_ts = None
 
-        print(f"Video grid thw: {video_grid_thw}")
+        # print(f"Video grid thw: {video_grid_thw}")
 
         position_ids, _ = self.get_rope_index(
             self.merge_size,
@@ -718,4 +860,3 @@ def make_supervised_data_module(processor, data_args) -> Dict:
 
 if __name__ == "__main__":
     pass
-

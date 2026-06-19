@@ -6,21 +6,21 @@ export TORCHCODEC_FFMPEG_LOG_LEVEL=QUIET
 # ======================
 # Distributed
 # ======================
-NPROC_PER_NODE=3
+NPROC_PER_NODE=4
 MASTER_ADDR="127.0.0.1"
 MASTER_PORT=$(shuf -i 20000-29999 -n 1)
 
 # ======================
 # Paths (set these for your environment)
 # ======================
-MODEL_PATH="PATH_TO_PRETRAINED_QWEN3VL"
-OUTPUT_DIR="./checkpoints/spatial_ttt_2648"
-CACHE_DIR="./cache"
+MODEL_PATH="/mnt/data/vmo-ai-task/anhdh35/Spatial-TTT/Qwen3-VL-2B-Instruct"
+OUTPUT_DIR="./checkpoints/spatial_ttt_nav"
+CACHE_DIR="/mnt/data/vmo-ai-task/anhdh35/.cache"
 
 # ======================
 # Data (Spatial-TTT-Data-97k: https://huggingface.co/datasets/THU-SI/Spatial-TTT-Data-97k)
 # ======================
-DATASET="spatial_ttt_data_97k"
+DATASET="train_r2r_rxr"
 VIDEO_MAX_FRAMES=128
 RESIZE_HEIGHT=352
 RESIZE_WIDTH=480
@@ -28,7 +28,7 @@ RESIZE_WIDTH=480
 # ======================
 # Training
 # ======================
-BATCH_SIZE=1
+BATCH_SIZE=8
 GRADIENT_ACCUMULATION_STEPS=1
 LEARNING_RATE=1e-6
 NUM_EPOCHS=1
@@ -65,7 +65,7 @@ torchrun --nproc_per_node=$NPROC_PER_NODE \
     --video_max_frames $VIDEO_MAX_FRAMES \
     --resize_height $RESIZE_HEIGHT \
     --resize_width $RESIZE_WIDTH \
-    --video_min_frames 16 \
+    --video_min_frames 1 \
     --video_min_pixels 0 \
     --video_max_pixels 0 \
     --logging_steps 10 \
@@ -85,7 +85,7 @@ torchrun --nproc_per_node=$NPROC_PER_NODE \
     --window_decay False \
     --use_muon True \
     --use_momentum True \
-    --use_conv_layer True \
+    --use_conv_layer False \
     --w0_w2_low_rank 0 \
     --learnable_ttt_scale True \
     --lact_lr 1e-5 \
