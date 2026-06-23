@@ -204,19 +204,29 @@ def _to_list(x):
 
 #     return messages
 
-def _build_messages(item: Dict[str, Any], base_path: Path) -> List[Dict[str, Any]]:
-    """
-    Minimal Spatial-TTT fix.
-
-    Your VLN JSON uses:
-        "images": [frame0, frame1, frame2, ...]
-
-    Spatial-TTT training should treat this as ONE video trajectory, not many images.
-    Therefore:
-        JSON "images" list -> one {"type": "video", "video": [frame paths]}
-        many <image> placeholders -> one video visual token
-    """
-
+def _build_messages(item, base_path):
+    # ===== Path A: per-episode interleaved, mỗi <image> -> 1 ảnh riêng =====
+    if "images" in item and item["images"] is not None:
+        pool = [_make_abs_paths(base_path, p) for p in _to_list(item["images"])]
+        messages = []
+        for turn in item["conversations"]:
+            role = "user" if turn["from"] == "human" else "assistant"
+            if role == "user":
+                content = []
+                for seg in re.split(r"(<image>)", turn["value"]):
+                    if seg == "<image>":
+                        if not pool:
+                            raise ValueError(f"#<image> > #images, id={item.get('id')}")
+                        content.append({"type": "image", "image": pool.pop(0)})
+                    elif seg.strip():
+                        content.append({"type": "text", "text": seg})
+                messages.append({"role": role, "content": content})
+            else:
+                messages.append({"role": role,
+                                 "content": [{"type": "text", "text": turn["value"]}]})
+        if pool:
+            raise ValueError(f"{len(pool)} ảnh thừa, id={item.get('id')}")
+        return messages
     # ============================================================
     # Case 1: your VLN dataset format: "images" = trajectory frames
     # ============================================================

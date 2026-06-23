@@ -1103,7 +1103,8 @@ class Qwen3VLLaCTSWIGLULayer(nn.Module):
                 k_flat,
                 v_expanded,
                 position_embeddings,
-                cu_seqlens=kwargs.get("cu_seq_lens_q", None),
+                cu_seqlens=attention_mask if attention_mask is not None
+                        else kwargs.get("cu_seq_lens_q", None),
             )
 
         query_states = q_normed.transpose(1, 2)

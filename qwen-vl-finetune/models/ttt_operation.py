@@ -211,6 +211,10 @@ def block_causal_lact_swiglu(
     # [b, dv, dh] @ [b, dh, l] -> [b, dv, l] -> [b, l, dv]
     output[:, :, s_index:e_index] = torch.bmm(w1, gate * h)
 
+    n_updates = max(0, (k.shape[1] - chunk_size) // chunk_size)
+    if torch.distributed.get_rank() == 0:
+        print(f"[TTT] seq={k.shape[1]} chunk={chunk_size} updates={n_updates}")
+
     return output.transpose(1, 2)
 
 

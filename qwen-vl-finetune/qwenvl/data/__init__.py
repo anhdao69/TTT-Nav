@@ -11,7 +11,7 @@ import re
 # }
 
 TRAIN_R2R_RxR = {
-    "annotation_path": "/mnt/data/vmo-ai-task/anhdh35/JanusVLN/train_r2r_rxr.json",
+    "annotation_path": "/mnt/data/vmo-ai-task/anhdh35/JanusVLN/data/labels/train_r2r_rxr_episode.json",
     "data_path": "/mnt/data/vmo-ai-task/anhdh35/JanusVLN",
     "tag": "train_r2r_rxr"
 }

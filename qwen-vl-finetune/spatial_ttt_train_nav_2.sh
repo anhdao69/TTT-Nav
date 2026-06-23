@@ -13,8 +13,8 @@ MASTER_PORT=$(shuf -i 20000-29999 -n 1)
 # ======================
 # Paths (set these for your environment)
 # ======================
-MODEL_PATH="/mnt/data/vmo-ai-task/anhdh35/Spatial-TTT/Qwen3-VL-2B-Instruct"
-OUTPUT_DIR="./checkpoints/spatial_ttt_nav"
+MODEL_PATH="/mnt/data/vmo-ai-task/anhdh35/Spatial-TTT/qwen-vl-finetune/checkpoints/Qwen3-VL-2B-Instruct"
+OUTPUT_DIR="./checkpoints/spatial_ttt_nav_train_chunk512"
 CACHE_DIR="/mnt/data/vmo-ai-task/anhdh35/.cache"
 
 # ======================
@@ -28,7 +28,7 @@ RESIZE_WIDTH=480
 # ======================
 # Training
 # ======================
-BATCH_SIZE=8
+BATCH_SIZE=16
 GRADIENT_ACCUMULATION_STEPS=1
 LEARNING_RATE=1e-6
 NUM_EPOCHS=1
@@ -37,8 +37,8 @@ MAX_LENGTH=65536
 # ======================
 # TTT / LaCT (chunk 2648 setting)
 # ======================
-LACT_CHUNK_SIZE=2648
-WINDOW_SIZE=2648
+LACT_CHUNK_SIZE=512
+WINDOW_SIZE=512
 
 torchrun --nproc_per_node=$NPROC_PER_NODE \
     --master_addr=$MASTER_ADDR \
@@ -76,7 +76,7 @@ torchrun --nproc_per_node=$NPROC_PER_NODE \
     --tune_mm_llm True \
     --data_flatten True \
     --data_packing True \
-    --deepspeed "scripts/zero2.json" \
+    --deepspeed "scripts/zero1.json" \
     --lora_enable False \
     --lact_enable True \
     --num_lact_heads 4 \

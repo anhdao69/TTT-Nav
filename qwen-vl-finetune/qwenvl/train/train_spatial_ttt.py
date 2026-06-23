@@ -875,7 +875,7 @@ def train(attn_implementation="flash_attention_2"):
     rank0_print(f"Model class: {model.__class__.__name__}")
 
     processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
-    type(processor).__call__ = processor_call
+    # type(processor).__call__ = processor_call
 
     def _preprocess_fn(
         self,
