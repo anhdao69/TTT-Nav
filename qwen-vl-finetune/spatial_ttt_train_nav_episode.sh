@@ -60,7 +60,7 @@ torchrun --nproc_per_node=$NPROC_PER_NODE \
     --lr_scheduler_type "cosine_with_min_lr" \
     --min_lr_rate 0.1 \
     --weight_decay 0.01 \
-    --dataloader_num_workers 8 \
+    --dataloader_num_workers 1 \
     --video_fps 30 \
     --video_max_frames $VIDEO_MAX_FRAMES \
     --resize_height $RESIZE_HEIGHT \
@@ -74,9 +74,9 @@ torchrun --nproc_per_node=$NPROC_PER_NODE \
     --save_steps 100 \
     --save_total_limit 3 \
     --tune_mm_vision False \
-    --tune_mm_mlp True \
+    --tune_mm_mlp False \
     --tune_mm_llm True \
-    --data_flatten True \
+    --data_flatten False \
     --data_packing False \
     --deepspeed "scripts/zero2.json" \
     --lora_enable False \
@@ -94,5 +94,5 @@ torchrun --nproc_per_node=$NPROC_PER_NODE \
     --lact_layers "0/1/2/4/5/6/8/9/10/12/13/14/16/17/18/20/21/22/24/25/26" \
     --use_fused_kernel False \
     --seed 42 \
-    --ddp_timeout 720000 
+    --ddp_timeout 72000000 
 
