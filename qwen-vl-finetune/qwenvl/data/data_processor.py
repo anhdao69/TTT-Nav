@@ -464,31 +464,78 @@ class LazySupervisedDataset(Dataset):
     def __len__(self):
         return len(self.list_data_dict)
 
+    # @property
+    # def lengths(self):
+    #     length_list = []
+    #     for sample in self.list_data_dict:
+    #         # img_tokens = 128 if "image" in sample else 0
+    #         img_tokens = 128 if ("image" in sample or "images" in sample or "video" in sample) else 0
+    #         length_list.append(
+    #             sum(len(conv["value"].split()) for conv in sample["conversations"])
+    #             + img_tokens
+    #         )
+    #     return length_list
+
     @property
     def lengths(self):
         length_list = []
         for sample in self.list_data_dict:
-            # img_tokens = 128 if "image" in sample else 0
-            img_tokens = 128 if ("image" in sample or "images" in sample or "video" in sample) else 0
-            length_list.append(
-                sum(len(conv["value"].split()) for conv in sample["conversations"])
-                + img_tokens
+            text_len = sum(
+                len(conv["value"].split()) for conv in sample["conversations"]
             )
+
+            if "images" in sample:
+                media_len = 180 * len(sample["images"])
+            elif "image" in sample:
+                imgs = sample["image"] if isinstance(sample["image"], list) else [sample["image"]]
+                media_len = 180 * len(imgs)
+            elif "video" in sample:
+                vids = sample["video"] if isinstance(sample["video"], list) else [sample["video"]]
+                media_len = 180 * len(vids)
+            else:
+                media_len = 0
+
+            length_list.append(text_len + media_len)
+
         return length_list
+
+    # @property
+    # def modality_lengths(self):
+    #     length_list = []
+    #     for sample in self.list_data_dict:
+    #         cur_len = sum(
+    #             len(conv["value"].split()) for conv in sample["conversations"]
+    #         )
+    #         cur_len = (
+    #             cur_len
+    #             if ("image" in sample) or ("images" in sample) or ("video" in sample)
+    #             else -cur_len
+    #         )
+    #         length_list.append(cur_len)
+    #     return length_list
 
     @property
     def modality_lengths(self):
         length_list = []
         for sample in self.list_data_dict:
-            cur_len = sum(
+            text_len = sum(
                 len(conv["value"].split()) for conv in sample["conversations"]
             )
-            cur_len = (
-                cur_len
-                if ("image" in sample) or ("images" in sample) or ("video" in sample)
-                else -cur_len
-            )
-            length_list.append(cur_len)
+
+            if "images" in sample:
+                media_len = 180 * len(sample["images"])
+            elif "image" in sample:
+                imgs = sample["image"] if isinstance(sample["image"], list) else [sample["image"]]
+                media_len = 180 * len(imgs)
+            elif "video" in sample:
+                vids = sample["video"] if isinstance(sample["video"], list) else [sample["video"]]
+                media_len = 180 * len(vids)
+            else:
+                media_len = 0
+
+            total = text_len + media_len
+            length_list.append(total if media_len > 0 else -total)
+
         return length_list
 
     @property

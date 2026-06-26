@@ -1,5 +1,21 @@
 #!/bin/bash
-# Spatial-TTT training with chunk size 2648 and Spatial-TTT-Data-97k
+# Spatial-TTT training
+
+export TORCHCODEC_FFMPEG_LOG_LEVEL=QUIET
+
+# ======================
+# Logging
+# ======================
+LOG_DIR="./logs"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/spatial_ttt_$(date +%Y%m%d_%H%M%S).log"
+
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+echo "Logging to: $LOG_FILE"
+echo "Started at: $(date)"
+echo "Host: $(hostname)"
+echo "PWD: $(pwd)"
 
 export TORCHCODEC_FFMPEG_LOG_LEVEL=QUIET
 
@@ -40,6 +56,12 @@ MAX_LENGTH=65536
 LACT_CHUNK_SIZE=1024
 WINDOW_SIZE=2048
 
+export NCCL_DEBUG=INFO
+export TORCH_DISTRIBUTED_DEBUG=DETAIL
+export TORCH_NCCL_TRACE_BUFFER_SIZE=1048576
+export TORCH_NCCL_DUMP_ON_TIMEOUT=1
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
+
 torchrun --nproc_per_node=$NPROC_PER_NODE \
     --master_addr=$MASTER_ADDR \
     --master_port=$MASTER_PORT \
@@ -60,7 +82,7 @@ torchrun --nproc_per_node=$NPROC_PER_NODE \
     --lr_scheduler_type "cosine_with_min_lr" \
     --min_lr_rate 0.1 \
     --weight_decay 0.01 \
-    --dataloader_num_workers 1 \
+    --dataloader_num_workers 0 \
     --video_fps 30 \
     --video_max_frames $VIDEO_MAX_FRAMES \
     --resize_height $RESIZE_HEIGHT \
@@ -79,6 +101,7 @@ torchrun --nproc_per_node=$NPROC_PER_NODE \
     --data_flatten False \
     --data_packing False \
     --deepspeed "scripts/zero2.json" \
+    --ddp_find_unused_parameters True \
     --lora_enable False \
     --lact_enable True \
     --num_lact_heads 4 \
@@ -93,6 +116,5 @@ torchrun --nproc_per_node=$NPROC_PER_NODE \
     --lact_lr 1e-5 \
     --lact_layers "0/1/2/4/5/6/8/9/10/12/13/14/16/17/18/20/21/22/24/25/26" \
     --use_fused_kernel False \
-    --seed 42 \
-    --ddp_timeout 72000000 
+    --seed 42 
 
