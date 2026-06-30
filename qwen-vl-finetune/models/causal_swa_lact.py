@@ -632,6 +632,15 @@ class Qwen3VLLaCTSWIGLULayer(nn.Module):
             n=self.num_fw_heads,
             b=batch_size,
         )
+        # Guarantee lr_proj / momentum_proj / k_scale / k_offset always receive a
+        # gradient, even when no fast-weight update runs (seq_len < 2*chunk_size).
+        # These params only feed the update path; without this, the set of params
+        # with grads differs across ranks and ZeRO-2 builds mismatched all-reduce
+        # buckets -> "Detected mismatch between collectives ... Tensor shapes A vs B".
+        aux = fast_k.float().sum() + fw_lr1.sum() + fw_lr2.sum() + fw_lr3.sum()
+        if momentum is not None:
+            aux = aux + momentum.sum()
+        ttt_output = ttt_output + (aux * 0.0).to(ttt_output.dtype)
 
         return ttt_output
 
