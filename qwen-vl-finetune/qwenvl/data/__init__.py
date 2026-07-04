@@ -16,6 +16,14 @@ TRAIN_R2R_RxR = {
     "tag": "train_r2r_rxr"
 }
 
+# Action-isolated episodes: actions removed from the token stream, supervised
+# via single-token readout labels (see create_data/build_episode_isolated.py).
+TRAIN_R2R_RxR_ISOLATED = {
+    "annotation_path": "/mnt/data/vmo-ai-task/anhdh35/JanusVLN/data/labels/train_r2r_rxr_episode_isolated.json",
+    "data_path": "/mnt/data/vmo-ai-task/anhdh35/JanusVLN",
+    "tag": "train_r2r_rxr_episode_isolated"
+}
+
 data_dict = {
     # "cambrian_737k": CAMBRIAN_737K,
     # "cambrian_737k_pack": CAMBRIAN_737K_PACK,
@@ -23,6 +31,7 @@ data_dict = {
     # "clevr_mc": CLEVR_MC,
     # "videochatgpt": VIDEOCHATGPT,
     "train_r2r_rxr": TRAIN_R2R_RxR,
+    "train_r2r_rxr_episode_isolated": TRAIN_R2R_RxR_ISOLATED,
 }
 
 

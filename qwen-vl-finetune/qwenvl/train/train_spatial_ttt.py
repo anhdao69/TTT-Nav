@@ -128,6 +128,42 @@ DEFAULT_LACT_CONFIG = {
 }
 
 
+class ActionWeightedTrainer(Trainer):
+    """Trainer with optional up-weighting of the STOP action label.
+
+    STOP is ~1.2% of action labels in R2R/RxR episodes; with plain CE the
+    policy learns to almost never stop. This computes token-level CE only at
+    labeled positions (cheap: ~1 label per step) and multiplies the STOP
+    positions by `stop_loss_weight`.
+    """
+
+    def __init__(self, *args, stop_token_id=None, stop_loss_weight=1.0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._stop_token_id = stop_token_id
+        self._stop_loss_weight = stop_loss_weight
+
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+        labels = inputs.pop("labels")
+        outputs = model(**inputs)
+        logits = outputs.logits
+
+        shift_labels = labels[:, 1:].to(logits.device)
+        mask = shift_labels != -100
+        flat_logits = logits[:, :-1, :][mask].float()
+        flat_labels = shift_labels[mask]
+
+        ce = torch.nn.functional.cross_entropy(flat_logits, flat_labels, reduction="none")
+        weights = torch.ones_like(ce)
+        if self._stop_token_id is not None and self._stop_loss_weight != 1.0:
+            weights = torch.where(
+                flat_labels == self._stop_token_id,
+                torch.full_like(ce, self._stop_loss_weight),
+                weights,
+            )
+        loss = (ce * weights).sum() / weights.sum().clamp_min(1.0)
+        return (loss, outputs) if return_outputs else loss
+
+
 @dataclass
 class SpatialTTTArguments:
     lact_enable: bool = True
@@ -149,6 +185,9 @@ class SpatialTTTArguments:
     lact_layers: Optional[str] = None
     lact_lr: Optional[float] = None
     use_conv_layer: bool = False
+    # STOP-imbalance handling for action-isolated training (1.0 = disabled).
+    stop_loss_weight: float = 1.0
+    stop_action_token: str = "stop"
 
 
 @dataclass
@@ -1125,13 +1164,32 @@ def train(attn_implementation="flash_attention_2"):
         )
         callbacks.append(window_decay_callback)
 
-    trainer = Trainer(
-        model=model,
-        processing_class=tokenizer,
-        args=training_args,
-        callbacks=callbacks,
-        **data_module,
-    )
+    if lact_args.stop_loss_weight != 1.0:
+        stop_ids = tokenizer.encode(lact_args.stop_action_token, add_special_tokens=False)
+        assert len(stop_ids) == 1, (
+            f"stop_action_token {lact_args.stop_action_token!r} must be a single token, got {stop_ids}"
+        )
+        rank0_print(
+            f"Using ActionWeightedTrainer: stop token {lact_args.stop_action_token!r} "
+            f"(id={stop_ids[0]}) weighted x{lact_args.stop_loss_weight}"
+        )
+        trainer = ActionWeightedTrainer(
+            model=model,
+            processing_class=tokenizer,
+            args=training_args,
+            callbacks=callbacks,
+            stop_token_id=stop_ids[0],
+            stop_loss_weight=lact_args.stop_loss_weight,
+            **data_module,
+        )
+    else:
+        trainer = Trainer(
+            model=model,
+            processing_class=tokenizer,
+            args=training_args,
+            callbacks=callbacks,
+            **data_module,
+        )
     type(trainer)._save = _save_func
 
     if lact_args.lact_enable and lact_args.lact_lr is not None:

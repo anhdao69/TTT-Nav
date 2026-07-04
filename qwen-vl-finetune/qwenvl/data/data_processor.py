@@ -347,6 +347,77 @@ def _build_messages(item, base_path):
     return messages
 
 
+# Action-isolated readout: valid single-token action words and the assistant
+# scaffold "<|im_start|>assistant\n". The action word NEVER appears as an input
+# token; it is only the label at the readout position.
+ISOLATED_ACTION_WORDS = ("forward", "left", "right", "stop")
+ASSISTANT_SCAFFOLD_IDS = [151644, 77091, 198]  # <|im_start|> assistant \n
+IM_END_ID = 151645
+
+
+def _find_subsequence(ids, pattern):
+    n = len(pattern)
+    return [i for i in range(len(ids) - n + 1) if ids[i : i + n] == pattern]
+
+
+def preprocess_qwen_visual_isolated(
+    sources,
+    processor,
+) -> Dict:
+    """Action-isolated episode sample: empty assistant turns as readout slots.
+
+    Each step is `user(obs)<|im_end|>\n<|im_start|>assistant\n<|im_end|>\n`.
+    We set labels[pos(<|im_end|>)] = action_token so that, after the standard
+    causal shift, the prediction FROM the "assistant\n" token is supervised
+    with the single-token action word. All other labels stay IGNORE_INDEX, and
+    no action text is ever part of input_ids (no leakage into future steps).
+    """
+    if len(sources) != 1:
+        raise ValueError(f"Expected 1 source, got {len(sources)}")
+
+    source = sources[0]
+    base_path = Path(source.get("data_path", ""))
+    actions = source["actions"]
+    messages = _build_messages(source, base_path)
+
+    full_result = processor.apply_chat_template(
+        messages, tokenize=True, return_dict=True, return_tensors="pt", do_sample_frames=False
+    )
+
+    input_ids = full_result["input_ids"]
+    if isinstance(input_ids, list):
+        input_ids = torch.tensor(input_ids).unsqueeze(0)
+
+    labels = torch.full_like(input_ids, IGNORE_INDEX)
+
+    tokenizer = processor.tokenizer
+    ids = input_ids[0].tolist()
+    scaffold_positions = _find_subsequence(ids, ASSISTANT_SCAFFOLD_IDS)
+    if len(scaffold_positions) != len(actions):
+        raise ValueError(
+            f"Found {len(scaffold_positions)} assistant scaffolds but "
+            f"{len(actions)} actions. sample_id={source.get('id')}"
+        )
+
+    for pos, action in zip(scaffold_positions, actions):
+        if action not in ISOLATED_ACTION_WORDS:
+            raise ValueError(f"Invalid action {action!r}. sample_id={source.get('id')}")
+        action_ids = tokenizer.encode(action, add_special_tokens=False)
+        if len(action_ids) != 1:
+            raise ValueError(f"Action {action!r} is not a single token: {action_ids}")
+        target = pos + len(ASSISTANT_SCAFFOLD_IDS)  # the <|im_end|> after "assistant\n"
+        if ids[target] != IM_END_ID:
+            raise ValueError(
+                f"Expected <|im_end|> at readout target {target}, got {ids[target]}. "
+                f"sample_id={source.get('id')}"
+            )
+        labels[0, target] = action_ids[0]
+
+    full_result["labels"] = labels
+    full_result["input_ids"] = input_ids
+    return full_result
+
+
 def preprocess_qwen_visual(
     sources,
     processor,
@@ -355,6 +426,8 @@ def preprocess_qwen_visual(
         raise ValueError(f"Expected 1 source, got {len(sources)}")
 
     source = sources[0]
+    if source.get("actions") is not None:
+        return preprocess_qwen_visual_isolated(sources, processor)
     base_path = Path(source.get("data_path", ""))
     messages = _build_messages(source, base_path)
 
