@@ -38,3 +38,5 @@ wandb/
 logs/
 __pycache__/
 *.pyc
+
+labels
