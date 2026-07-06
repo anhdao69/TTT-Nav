@@ -129,18 +129,22 @@ DEFAULT_LACT_CONFIG = {
 
 
 class ActionWeightedTrainer(Trainer):
-    """Trainer with optional up-weighting of the STOP action label.
+    """Trainer with per-action-class loss weighting at labeled positions.
 
-    STOP is ~1.2% of action labels in R2R/RxR episodes; with plain CE the
-    policy learns to almost never stop. This computes token-level CE only at
-    labeled positions (cheap: ~1 label per step) and multiplies the STOP
-    positions by `stop_loss_weight`.
+    The action distribution is heavily imbalanced (forward 66%, left/right
+    ~17/16%, stop 1.2%); with plain CE the policy under-weights turns and
+    stop, and greedy decoding collapses to forward. This computes token-level
+    CE only at labeled positions (cheap: ~1 label per step) and multiplies
+    each position by the weight of its action token.
+
+    `token_weight_map`: {token_id: weight}. Built either from
+    --action_loss_weights ("forward:1.0,left:2.5,right:2.5,stop:6.0") or,
+    for backward compatibility, from --stop_loss_weight alone.
     """
 
-    def __init__(self, *args, stop_token_id=None, stop_loss_weight=1.0, **kwargs):
+    def __init__(self, *args, token_weight_map=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self._stop_token_id = stop_token_id
-        self._stop_loss_weight = stop_loss_weight
+        self._token_weight_map = token_weight_map or {}
 
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         labels = inputs.pop("labels")
@@ -154,12 +158,11 @@ class ActionWeightedTrainer(Trainer):
 
         ce = torch.nn.functional.cross_entropy(flat_logits, flat_labels, reduction="none")
         weights = torch.ones_like(ce)
-        if self._stop_token_id is not None and self._stop_loss_weight != 1.0:
-            weights = torch.where(
-                flat_labels == self._stop_token_id,
-                torch.full_like(ce, self._stop_loss_weight),
-                weights,
-            )
+        for token_id, w in self._token_weight_map.items():
+            if w != 1.0:
+                weights = torch.where(
+                    flat_labels == token_id, torch.full_like(ce, w), weights
+                )
         loss = (ce * weights).sum() / weights.sum().clamp_min(1.0)
         return (loss, outputs) if return_outputs else loss
 
@@ -188,6 +191,9 @@ class SpatialTTTArguments:
     # STOP-imbalance handling for action-isolated training (1.0 = disabled).
     stop_loss_weight: float = 1.0
     stop_action_token: str = "stop"
+    # Per-class weights, e.g. "forward:1.0,left:2.5,right:2.5,stop:6.0".
+    # Takes precedence over stop_loss_weight when set.
+    action_loss_weights: Optional[str] = None
 
 
 @dataclass
@@ -1164,22 +1170,28 @@ def train(attn_implementation="flash_attention_2"):
         )
         callbacks.append(window_decay_callback)
 
-    if lact_args.stop_loss_weight != 1.0:
+    token_weight_map = {}
+    if lact_args.action_loss_weights:
+        for pair in lact_args.action_loss_weights.split(","):
+            word, w = pair.split(":")
+            ids = tokenizer.encode(word.strip(), add_special_tokens=False)
+            assert len(ids) == 1, f"action {word!r} must be a single token, got {ids}"
+            token_weight_map[ids[0]] = float(w)
+    elif lact_args.stop_loss_weight != 1.0:
         stop_ids = tokenizer.encode(lact_args.stop_action_token, add_special_tokens=False)
         assert len(stop_ids) == 1, (
             f"stop_action_token {lact_args.stop_action_token!r} must be a single token, got {stop_ids}"
         )
-        rank0_print(
-            f"Using ActionWeightedTrainer: stop token {lact_args.stop_action_token!r} "
-            f"(id={stop_ids[0]}) weighted x{lact_args.stop_loss_weight}"
-        )
+        token_weight_map[stop_ids[0]] = lact_args.stop_loss_weight
+
+    if any(w != 1.0 for w in token_weight_map.values()):
+        rank0_print(f"Using ActionWeightedTrainer with token weights: {token_weight_map}")
         trainer = ActionWeightedTrainer(
             model=model,
             processing_class=tokenizer,
             args=training_args,
             callbacks=callbacks,
-            stop_token_id=stop_ids[0],
-            stop_loss_weight=lact_args.stop_loss_weight,
+            token_weight_map=token_weight_map,
             **data_module,
         )
     else:
